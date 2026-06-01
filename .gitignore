@@ -1,0 +1,19 @@
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+
+# Arquivos temporários
+*.toc
+*.pkg
+
+# Relatórios gerados
+Relatorio_Final.pdf
+
+# Outros
+nuitka-crash-report.xml
+saida/
