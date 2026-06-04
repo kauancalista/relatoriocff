@@ -25,6 +25,9 @@ class Aplicacao:
         self.root.geometry("1050x700")
         self.root.minsize(950, 650)
 
+        # Opcional: Se você tiver gerado o icone.ico, pode descomentar a linha abaixo
+        self.root.iconbitmap("icone.ico")
+
         # Variáveis da tela principal
         self.planilha = ""
         self.pasta = ""
@@ -190,17 +193,22 @@ class Aplicacao:
                 self.progresso.set(indice / total_nomes)
                 self.root.update_idletasks()
 
-                docs_coletados = coletar_documentos([nome], self.pasta)
+                # ---- ALTERAÇÃO CHAVE AQUI: Passamos self.escrever_log para o coletor ----
+                docs_coletados = coletar_documentos([nome], self.pasta, self.escrever_log)
                 documentos.extend(docs_coletados)
 
-            self.escrever_log("Gerando PDF...")
+            self.escrever_log("\nGerando PDF...")
             gerar_relatorio(documentos, self.saida)
             self.escrever_log("Concluído.")
             self.lbl_atual.configure(text="✔ PDF Gerado com Sucesso!", text_color="#2ecc71")
 
             messagebox.showinfo("Sucesso", "Relatório gerado com sucesso!")
+
         except Exception as e:
-            messagebox.showerror("Erro", str(e))
+            # ---- ALTERAÇÃO CHAVE AQUI: Tratamento caso o usuário cancele a operação ----
+            self.escrever_log(f"\n❌ Parado: {str(e)}")
+            self.lbl_atual.configure(text="Processo Cancelado", text_color="#e74c3c")
+            messagebox.showwarning("Aviso", str(e))
 
     # ================= TELA SECUNDÁRIA (IMPORTAÇÃO) ================= #
 

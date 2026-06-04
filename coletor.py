@@ -1,30 +1,31 @@
 from aguardador import aguardar_documentos
 
 
-def coletar_documentos(nomes, pasta):
-    """
-    Retorna todos os documentos
-    na ordem correta para o PDF final.
-    """
+def coletar_documentos(nomes, pasta, log_callback):
+    documentos_finais = []
 
-    documentos = []
+    for nome in nomes:
+        # Pede para o aguardador buscar (e perguntar ao usuário se faltar)
+        doc_principal, doc_cpf = aguardar_documentos(nome, pasta, log_callback)
 
-    total = len(nomes)
+        # --- LOG PARA O DOCUMENTO PRINCIPAL ---
+        if doc_principal:
+            if doc_principal["tipo"] == "Similaridade":
+                log_callback(
+                    f"\n⚠ Correspondência por similaridade\nPlanilha: {nome}\nArquivo: {doc_principal['arquivo']}\nSimilaridade: {doc_principal['similaridade']}%\n")
+            else:
+                log_callback(f"✓ Encontrado: {nome} ({doc_principal['tipo']})")
 
-    for indice, nome in enumerate(nomes, start=1):
+            documentos_finais.append(doc_principal["caminho"])
 
-        print("\n========================")
-        print(f"{indice}/{total}")
-        print(nome)
+        # --- LOG PARA O CPF ---
+        if doc_cpf:
+            if doc_cpf["tipo"] == "Similaridade":
+                log_callback(
+                    f"\n⚠ Correspondência por similaridade\nPlanilha: {nome} CPF\nArquivo: {doc_cpf['arquivo']}\nSimilaridade: {doc_cpf['similaridade']}%\n")
+            else:
+                log_callback(f"✓ Encontrado: CPF de {nome} ({doc_cpf['tipo']})")
 
-        doc_principal, doc_cpf = aguardar_documentos(
-            nome,
-            pasta
-        )
+            documentos_finais.append(doc_cpf["caminho"])
 
-        documentos.append(doc_principal)
-        documentos.append(doc_cpf)
-
-        print("✓ Adicionado à fila")
-
-    return documentos
+    return documentos_finais
