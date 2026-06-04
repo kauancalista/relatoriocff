@@ -17,22 +17,27 @@ def normalizar(texto):
     # 3. Substitui pontuações por espaço (.-_())
     texto = re.sub(r'[.,\-_()]', ' ', texto)
 
-    # 4. Remove espaços duplos (ex: "JOAO   SILVA" -> "JOAO SILVA")
+    # 4. Remove espaços duplos
     texto = re.sub(r'\s+', ' ', texto).strip()
 
     return texto
 
 
-def tratar_casamentos(texto):
-    # Se houver " E ", pega apenas o primeiro nome da lista
-    if " E " in texto:
-        return texto.split(" E ")[0].strip()
-    return texto
+def extrair_primeiro_conjuge(texto_normalizado):
+    """Pega apenas o primeiro nome se houver ' E '"""
+    # Como o texto já foi normalizado antes de chegar aqui,
+    # o " e " minúsculo já virou " E " maiúsculo com certeza.
+    if " E " in texto_normalizado:
+        return texto_normalizado.split(" E ")[0].strip()
+    return texto_normalizado
 
 
 def localizar_documento(nome_original, pasta):
-    # Trata casamentos e normaliza a base
-    nome_base = normalizar(tratar_casamentos(nome_original))
+    # Primeiro transforma TUDO em maiúsculo e tira os acentos
+    nome_norm_completo = normalizar(nome_original)
+
+    # Depois, cria uma versão cortando o segundo nome (se for casamento)
+    nome_primeiro_conjuge = extrair_primeiro_conjuge(nome_norm_completo)
 
     melhor_match = None
     maior_similaridade = 0
@@ -45,27 +50,37 @@ def localizar_documento(nome_original, pasta):
 
         nome_arquivo_norm = normalizar(nome_arquivo)
 
-        # CAMADA 1: Busca Exata (Normalizada)
-        if nome_arquivo_norm == nome_base:
+        # CAMADA 1: Busca Exata pelo CASAL (Ex: O PDF tem o nome dos dois)
+        if nome_arquivo_norm == nome_norm_completo:
             return {
                 "caminho": os.path.join(pasta, arquivo),
-                "tipo": "Exata / Normalizada",
+                "tipo": "Exata (Casal Completo)",
                 "similaridade": 100,
                 "arquivo": arquivo
             }
 
-        # CAMADA 2: Calcula Similaridade
-        similaridade = fuzz.ratio(nome_base, nome_arquivo_norm)
+        # CAMADA 2: Busca Exata APENAS pelo 1º Cônjuge (Ex: O PDF só tem o nome do noivo/noiva)
+        if nome_arquivo_norm == nome_primeiro_conjuge:
+            return {
+                "caminho": os.path.join(pasta, arquivo),
+                "tipo": "Exata (1º Cônjuge)",
+                "similaridade": 100,
+                "arquivo": arquivo
+            }
+
+        # CAMADA 3: Calcula a Similaridade.
+        # (Usamos o nome do 1º cônjuge para não confundir o sistema)
+        similaridade = fuzz.ratio(nome_primeiro_conjuge, nome_arquivo_norm)
         if similaridade > maior_similaridade:
             maior_similaridade = similaridade
             melhor_match = nome_arquivo_norm
             arquivo_encontrado = arquivo
 
-    # CAMADA 3: Retorna se a similaridade for >= 90%
+    # CAMADA 4: Retorna se a similaridade for >= 90%
     if maior_similaridade >= 90:
         return {
             "caminho": os.path.join(pasta, arquivo_encontrado),
-            "tipo": "Similaridade",
+            "tipo": "Similaridade (1º Cônjuge)",
             "similaridade": round(maior_similaridade, 1),
             "arquivo": arquivo_encontrado
         }

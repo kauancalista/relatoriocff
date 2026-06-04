@@ -3,48 +3,58 @@ from tkinter import messagebox
 from localizador import localizar_documento
 
 
-def aguardar_documentos(nome, pasta, log_callback):
-    """
-    Tenta localizar. Se não achar, pergunta ao usuário se ele quer
-    Aguardar, Ignorar ou Cancelar toda a operação.
-    """
+def tratar_nome(nome):
+    """Garante o corte correto se for casamento antes de buscar o anexo"""
+    nome_upper = nome.upper()
+    if " E " in nome_upper:
+        return nome_upper.split(" E ")[0].strip()
+    return nome_upper
+
+
+def aguardar_documentos(nome, pasta, log_callback, modo="CPF"):
     while True:
         doc_principal = localizar_documento(nome, pasta)
+        nome_limpo = tratar_nome(nome)
 
-        # Para o CPF, tratamos o casamento primeiro para garantir que a busca fique "NOME CPF"
-        if " E " in nome.upper():
-            nome_limpo = nome.upper().split(" E ")[0].strip()
-        else:
-            nome_limpo = nome
+        doc_secundario = None
+        nome_secundario_exibicao = ""
 
-        doc_cpf = localizar_documento(f"{nome_limpo} CPF", pasta)
+        # LÓGICA DO SEGUNDO DOCUMENTO BASEADA NO MODO
+        if modo == "CPF":
+            doc_secundario = localizar_documento(f"{nome_limpo} CPF", pasta)
+            nome_secundario_exibicao = "CPF"
 
-        if doc_principal and doc_cpf:
-            return doc_principal, doc_cpf
+        elif modo == "CERTIDAO":
+            # Tenta encontrar qualquer uma das variações
+            sufixos = [" + FERC", " + CRAS", " + REGISTRE-SE", " FERC", " CRAS", " REGISTRE-SE"]
+            for sufixo in sufixos:
+                doc_secundario = localizar_documento(f"{nome_limpo}{sufixo}", pasta)
+                if doc_secundario:
+                    break
+            nome_secundario_exibicao = "Anexo (FERC/CRAS/REGISTRE-SE)"
 
-        # Se chegou aqui, está faltando documento. Montamos a janela de erro.
-        faltam = []
+        # VERIFICAÇÃO FINAL
+        if doc_principal and doc_secundario:
+            return doc_principal, doc_secundario
+
+        # SE FALTAR ALGO, MONTA A TELA DE AVISO
         status_principal = "✓ Documento Principal" if doc_principal else "✗ Documento Principal"
-        status_cpf = "✓ CPF" if doc_cpf else "✗ CPF"
+        status_sec = f"✓ {nome_secundario_exibicao}" if doc_secundario else f"✗ {nome_secundario_exibicao}"
 
-        msg = f"Pendência encontrada para:\n{nome}\n\n{status_principal}\n{status_cpf}\n\n"
+        msg = f"Pendência encontrada para:\n{nome}\n\n{status_principal}\n{status_sec}\n\n"
         msg += "O que deseja fazer?\n"
         msg += "[Sim] = Tentar achar de novo (Coloque o arquivo na pasta)\n"
         msg += "[Não] = Ignorar o que falta e gerar mesmo assim\n"
         msg += "[Cancelar] = Parar a geração do relatório agora"
 
-        # Pop-up nativo e elegante (Sim, Não, Cancelar)
         resposta = messagebox.askyesnocancel("Documento Faltando", msg)
 
         if resposta is True:
-            # Sim -> Tenta de novo
             log_callback(f"Aguardando arquivos para: {nome}...")
             time.sleep(1)
             continue
         elif resposta is False:
-            # Não -> Ignorar (Passa os arquivos como None)
             log_callback(f"⚠ Faltando documentos. Ignorando e avançando: {nome}.")
-            return doc_principal, doc_cpf
+            return doc_principal, doc_secundario
         else:
-            # Cancelar -> Para o script inteiro gerando um erro amigável
             raise Exception("O processo foi cancelado pelo usuário.")

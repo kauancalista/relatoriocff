@@ -1,28 +1,37 @@
 from localizador import localizar_documento
 
 
-def conferir_documentos(nomes, pasta):
+def conferir_documentos(nomes, pasta, modo="CPF"):
     completos = []
     pendentes = []
 
     for nome in nomes:
         doc = localizar_documento(nome, pasta)
 
-        # Trata o casamento para o CPF também na conferência
-        if " E " in nome.upper():
-            nome_limpo = nome.upper().split(" E ")[0].strip()
+        nome_upper = nome.upper()
+        if " E " in nome_upper:
+            nome_limpo = nome_upper.split(" E ")[0].strip()
         else:
-            nome_limpo = nome
+            nome_limpo = nome_upper
 
-        cpf = localizar_documento(f"{nome_limpo} CPF", pasta)
+        doc_secundario = None
 
-        if doc and cpf:
+        if modo == "CPF":
+            doc_secundario = localizar_documento(f"{nome_limpo} CPF", pasta)
+        elif modo == "CERTIDAO":
+            sufixos = [" + FERC", " + CRAS", " + REGISTRE-SE", " FERC", " CRAS", " REGISTRE-SE"]
+            for sufixo in sufixos:
+                doc_secundario = localizar_documento(f"{nome_limpo}{sufixo}", pasta)
+                if doc_secundario:
+                    break
+
+        if doc and doc_secundario:
             completos.append(nome)
         else:
             pendente = {
                 "nome": nome,
                 "documento": bool(doc),
-                "cpf": bool(cpf)
+                "anexo": bool(doc_secundario)
             }
             pendentes.append(pendente)
 
