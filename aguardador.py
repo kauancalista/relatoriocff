@@ -1,43 +1,33 @@
 import time
 from tkinter import messagebox
-from localizador import localizar_documento
+from localizador import localizar_documento, extrair_primeiro_conjuge, normalizar
 
 
-def tratar_nome(nome):
-    """Garante o corte correto se for casamento antes de buscar o anexo"""
-    nome_upper = nome.upper()
-    if " E " in nome_upper:
-        return nome_upper.split(" E ")[0].strip()
-    return nome_upper
-
-
-def aguardar_documentos(nome, pasta, log_callback, modo="CPF"):
+def aguardar_documentos(nome, pasta, log_callback, modo="CPF", cache_pasta=None):
     while True:
-        doc_principal = localizar_documento(nome, pasta)
-        nome_limpo = tratar_nome(nome)
+        doc_principal = localizar_documento(nome, pasta, cache_pasta)
+
+        # OTIMIZADO: reutiliza as funções do localizador em vez de duplicar a lógica
+        nome_limpo = extrair_primeiro_conjuge(normalizar(nome))
 
         doc_secundario = None
         nome_secundario_exibicao = ""
 
-        # LÓGICA DO SEGUNDO DOCUMENTO BASEADA NO MODO
         if modo == "CPF":
-            doc_secundario = localizar_documento(f"{nome_limpo} CPF", pasta)
+            doc_secundario = localizar_documento(f"{nome_limpo} CPF", pasta, cache_pasta)
             nome_secundario_exibicao = "CPF"
 
         elif modo == "CERTIDAO":
-            # Tenta encontrar qualquer uma das variações
             sufixos = [" + FERC", " + CRAS", " + REGISTRE-SE", " FERC", " CRAS", " REGISTRE-SE"]
             for sufixo in sufixos:
-                doc_secundario = localizar_documento(f"{nome_limpo}{sufixo}", pasta)
+                doc_secundario = localizar_documento(f"{nome_limpo}{sufixo}", pasta, cache_pasta)
                 if doc_secundario:
                     break
             nome_secundario_exibicao = "Anexo (FERC/CRAS/REGISTRE-SE)"
 
-        # VERIFICAÇÃO FINAL
         if doc_principal and doc_secundario:
             return doc_principal, doc_secundario
 
-        # SE FALTAR ALGO, MONTA A TELA DE AVISO
         status_principal = "✓ Documento Principal" if doc_principal else "✗ Documento Principal"
         status_sec = f"✓ {nome_secundario_exibicao}" if doc_secundario else f"✗ {nome_secundario_exibicao}"
 
@@ -52,6 +42,9 @@ def aguardar_documentos(nome, pasta, log_callback, modo="CPF"):
         if resposta is True:
             log_callback(f"Aguardando arquivos para: {nome}...")
             time.sleep(1)
+            # OTIMIZAÇÃO: reconstrói o cache após o usuário adicionar arquivos
+            from localizador import construir_cache_pasta
+            cache_pasta = construir_cache_pasta(pasta)
             continue
         elif resposta is False:
             log_callback(f"⚠ Faltando documentos. Ignorando e avançando: {nome}.")

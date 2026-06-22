@@ -3,12 +3,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import threading
 
-from leitor_planilha import ler_nomes
-from coletor import coletar_documentos
-from pdf_builder import gerar_relatorio
-from conferencia import conferir_documentos
-from pendencias import exportar_pendencias
-from importador import importar_arquivos
+# Imports leves carregados na inicialização
+# Imports pesados (PIL, pypdf, reportlab, rapidfuzz) são carregados
+# sob demanda dentro de cada método, reduzindo RAM em idle.
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -30,6 +27,7 @@ class Aplicacao:
         self.saida = "Relatorio_Final.pdf"
         self.import_origem = ""
         self.import_destino = ""
+        self.import_modo = "mover"  # "mover" ou "copiar"
 
         self.criar_interface()
 
@@ -130,6 +128,9 @@ class Aplicacao:
                 messagebox.showerror("Erro", "Selecione a planilha e a pasta principal.")
                 return
 
+            from leitor_planilha import ler_nomes
+            from conferencia import conferir_documentos
+
             modo_selecionado = self.combo_modo.get()
             self.escrever_log(f"\n--- INICIANDO CONFERÊNCIA ({modo_selecionado}) ---")
 
@@ -160,6 +161,7 @@ class Aplicacao:
                                                initialfile="Pendencias.txt")
         if arquivo:
             try:
+                from pendencias import exportar_pendencias
                 exportar_pendencias(self.pendentes_atuais, arquivo)
                 self.escrever_log(f"\nPendências salvas em: {arquivo}")
                 messagebox.showinfo("Sucesso", "Arquivo exportado!")
@@ -175,21 +177,26 @@ class Aplicacao:
                 messagebox.showerror("Erro", "Selecione planilha e pasta principal.")
                 return
 
+            from leitor_planilha import ler_nomes
+            from coletor import coletar_documentos
+            from pdf_builder import gerar_relatorio
+
             modo_selecionado = self.combo_modo.get()
             self.escrever_log(f"\n--- GERANDO RELATÓRIO ({modo_selecionado}) ---")
 
             nomes = ler_nomes(self.planilha)
-            total_nomes = len(nomes)
 
-            documentos = []
-            for indice, nome in enumerate(nomes, start=1):
+            def atualizar_progresso(nome, indice, total):
                 self.lbl_atual.configure(text=nome, text_color="#f39c12")
-                self.progresso.set(indice / total_nomes)
+                self.progresso.set(indice / total)
                 self.root.update_idletasks()
 
-                # Passa o modo (CPF ou CERTIDAO) para o coletor
-                docs_coletados = coletar_documentos([nome], self.pasta, self.escrever_log, modo_selecionado)
-                documentos.extend(docs_coletados)
+            # Passa todos os nomes de uma vez — cache da pasta é construído
+            # uma única vez dentro do coletor, em vez de N vezes
+            documentos = coletar_documentos(
+                nomes, self.pasta, self.escrever_log, modo_selecionado,
+                progresso_callback=atualizar_progresso
+            )
 
             self.escrever_log("\nGerando PDF...")
             gerar_relatorio(documentos, self.saida)
@@ -203,11 +210,11 @@ class Aplicacao:
             self.lbl_atual.configure(text="Processo Cancelado", text_color="#e74c3c")
             messagebox.showwarning("Aviso", str(e))
 
-    # --- TELA SECUNDÁRIA (IMPORTAÇÃO MANTIDA IGUAL) ---
+    # --- TELA SECUNDÁRIA (IMPORTAÇÃO) ---
     def abrir_tela_importacao(self):
         janela = ctk.CTkToplevel(self.root)
         janela.title("Ferramenta - Coletar Arquivos")
-        janela.geometry("700x250")
+        janela.geometry("700x310")
         janela.transient(self.root)
         janela.grab_set()
 
@@ -223,15 +230,59 @@ class Aplicacao:
         ctk.CTkButton(frame, text="Selecionar", command=lambda: self.selec_imp_origem(lbl_origem), width=100).grid(
             row=0, column=2, pady=(15, 10))
 
-        ctk.CTkLabel(frame, text="Destino:", font=("Segoe UI", 14)).grid(row=1, column=0, sticky="w", pady=(10, 20))
+        ctk.CTkLabel(frame, text="Destino:", font=("Segoe UI", 14)).grid(row=1, column=0, sticky="w", pady=(10, 10))
         lbl_destino = ctk.CTkLabel(frame, text=self.import_destino if self.import_destino else "Nenhuma selecionada",
                                    text_color="gray")
-        lbl_destino.grid(row=1, column=1, sticky="ew", padx=10, pady=(10, 20))
+        lbl_destino.grid(row=1, column=1, sticky="ew", padx=10, pady=(10, 10))
         ctk.CTkButton(frame, text="Selecionar", command=lambda: self.selec_imp_destino(lbl_destino), width=100).grid(
-            row=1, column=2, pady=(10, 20))
+            row=1, column=2, pady=(10, 10))
 
-        ctk.CTkButton(frame, text="🚀 INICIAR CÓPIA", command=self.thread_importacao, font=("Segoe UI", 14, "bold"),
-                      fg_color="#8e44ad", hover_color="#9b59b6").grid(row=2, column=0, columnspan=3, pady=10)
+        # --- Toggle Mover / Copiar ---
+        frame_modo = ctk.CTkFrame(frame, fg_color="transparent")
+        frame_modo.grid(row=2, column=0, columnspan=3, pady=(8, 4))
+
+        ctk.CTkLabel(frame_modo, text="Modo:", font=("Segoe UI", 13)).pack(side="left", padx=(0, 10))
+
+        btn_mover = ctk.CTkButton(frame_modo, text="✂ Mover", width=110, font=("Segoe UI", 13),
+                                  fg_color="#8e44ad", hover_color="#9b59b6")
+        btn_copiar = ctk.CTkButton(frame_modo, text="📋 Copiar", width=110, font=("Segoe UI", 13),
+                                   fg_color="#2c3e50", hover_color="#34495e")
+        btn_mover.pack(side="left", padx=4)
+        btn_copiar.pack(side="left", padx=4)
+
+        def selecionar_mover():
+            self.import_modo = "mover"
+            btn_mover.configure(fg_color="#8e44ad", hover_color="#9b59b6")
+            btn_copiar.configure(fg_color="#2c3e50", hover_color="#34495e")
+
+        def selecionar_copiar():
+            self.import_modo = "copiar"
+            btn_copiar.configure(fg_color="#8e44ad", hover_color="#9b59b6")
+            btn_mover.configure(fg_color="#2c3e50", hover_color="#34495e")
+
+        btn_mover.configure(command=selecionar_mover)
+        btn_copiar.configure(command=selecionar_copiar)
+
+        # Reflete o modo já salvo (caso a janela seja reaberta)
+        if self.import_modo == "copiar":
+            selecionar_copiar()
+
+        lbl_modo_ativo = ctk.CTkLabel(frame_modo, text="(arquivos removidos da origem)",
+                                      font=("Segoe UI", 11), text_color="gray")
+        lbl_modo_ativo.pack(side="left", padx=(10, 0))
+
+        def atualizar_lbl_modo():
+            if self.import_modo == "mover":
+                lbl_modo_ativo.configure(text="(arquivos removidos da origem)")
+            else:
+                lbl_modo_ativo.configure(text="(arquivos mantidos na origem)")
+
+        btn_mover.configure(command=lambda: [selecionar_mover(), atualizar_lbl_modo()])
+        btn_copiar.configure(command=lambda: [selecionar_copiar(), atualizar_lbl_modo()])
+        atualizar_lbl_modo()
+
+        ctk.CTkButton(frame, text="🚀 EXECUTAR", command=self.thread_importacao, font=("Segoe UI", 14, "bold"),
+                      fg_color="#8e44ad", hover_color="#9b59b6").grid(row=3, column=0, columnspan=3, pady=14)
 
     def selec_imp_origem(self, lbl):
         pasta = filedialog.askdirectory()
@@ -253,20 +304,28 @@ class Aplicacao:
             messagebox.showerror("Erro", "Selecione as pastas de Origem e Destino.")
             return
 
-        try:
-            self.escrever_log("\n--- COLETANDO ARQUIVOS ---")
-            copiados, _ = importar_arquivos(self.import_origem, self.import_destino)
+        mover = self.import_modo == "mover"
+        verbo = "Movido" if mover else "Copiado"
+        verbo_total = "movido" if mover else "copiado"
 
-            if not copiados:
+        try:
+            from importador import importar_arquivos
+            self.escrever_log(f"\n--- COLETANDO ARQUIVOS ({self.import_modo.upper()}) ---")
+            processados, ignorados = importar_arquivos(self.import_origem, self.import_destino, mover=mover)
+
+            if not processados and not ignorados:
                 self.escrever_log("Nenhum arquivo encontrado na origem.")
                 messagebox.showinfo("Aviso", "A pasta do scanner está vazia.")
                 return
 
-            for arq in copiados:
-                self.escrever_log(f" ✓ Copiado: {arq}")
+            for arq in processados:
+                self.escrever_log(f" ✓ {verbo}: {arq}")
 
-            self.escrever_log(f"Total importado: {len(copiados)} arquivo(s).")
-            messagebox.showinfo("Coleta Concluída", f"{len(copiados)} arquivos copiados!")
+            for arq in ignorados:
+                self.escrever_log(f" ⚠ Já existe (ignorado): {arq}")
+
+            self.escrever_log(f"Total {verbo_total}: {len(processados)} arquivo(s). Ignorados: {len(ignorados)}.")
+            messagebox.showinfo("Coleta Concluída", f"{len(processados)} arquivo(s) {verbo_total}(s)!\n{len(ignorados)} ignorado(s) por já existirem.")
 
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao coletar:\n{str(e)}")

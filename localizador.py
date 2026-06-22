@@ -25,51 +25,67 @@ def normalizar(texto):
 
 def extrair_primeiro_conjuge(texto_normalizado):
     """Pega apenas o primeiro nome se houver ' E '"""
-    # Como o texto já foi normalizado antes de chegar aqui,
-    # o " e " minúsculo já virou " E " maiúsculo com certeza.
     if " E " in texto_normalizado:
         return texto_normalizado.split(" E ")[0].strip()
     return texto_normalizado
 
 
-def localizar_documento(nome_original, pasta):
-    # Primeiro transforma TUDO em maiúsculo e tira os acentos
-    nome_norm_completo = normalizar(nome_original)
+def construir_cache_pasta(pasta):
+    """
+    OTIMIZAÇÃO: lê e normaliza os arquivos da pasta uma única vez.
+    Retorna lista de tuplas (nome_original, nome_normalizado, extensao).
+    Deve ser chamado uma vez antes de processar todos os nomes da planilha,
+    e o resultado passado para localizar_documento via cache_pasta.
+    """
+    cache = []
+    for arquivo in os.listdir(pasta):
+        nome_arquivo, extensao = os.path.splitext(arquivo)
+        if extensao.lower() not in EXTENSOES_VALIDAS:
+            continue
+        cache.append((arquivo, normalizar(nome_arquivo), extensao.lower()))
+    return cache
 
-    # Depois, cria uma versão cortando o segundo nome (se for casamento)
+
+def localizar_documento(nome_original, pasta, cache_pasta=None):
+    """
+    Localiza um documento na pasta pelo nome.
+
+    cache_pasta: resultado de construir_cache_pasta(pasta).
+    Se não for fornecido, a pasta é lida na hora (comportamento original).
+    Para processar muitos nomes, prefira passar o cache para evitar
+    múltiplos os.listdir na mesma pasta.
+    """
+    nome_norm_completo = normalizar(nome_original)
     nome_primeiro_conjuge = extrair_primeiro_conjuge(nome_norm_completo)
 
     melhor_match = None
     maior_similaridade = 0
     arquivo_encontrado = None
 
-    for arquivo in os.listdir(pasta):
-        nome_arquivo, extensao = os.path.splitext(arquivo)
-        if extensao.lower() not in EXTENSOES_VALIDAS:
-            continue
+    # Usa o cache se fornecido, senão lê a pasta na hora
+    if cache_pasta is None:
+        cache_pasta = construir_cache_pasta(pasta)
 
-        nome_arquivo_norm = normalizar(nome_arquivo)
-
-        # CAMADA 1: Busca Exata pelo CASAL (Ex: O PDF tem o nome dos dois)
+    for arquivo, nome_arquivo_norm, _ in cache_pasta:
+        # CAMADA 1: Busca exata pelo casal (o PDF tem o nome dos dois)
         if nome_arquivo_norm == nome_norm_completo:
             return {
                 "caminho": os.path.join(pasta, arquivo),
-                "tipo": "Exata (Casal Completo)",
+                "tipo": "Encontrado",
                 "similaridade": 100,
                 "arquivo": arquivo
             }
 
-        # CAMADA 2: Busca Exata APENAS pelo 1º Cônjuge (Ex: O PDF só tem o nome do noivo/noiva)
+        # CAMADA 2: Busca exata pelo 1º cônjuge (o PDF só tem o nome de um)
         if nome_arquivo_norm == nome_primeiro_conjuge:
             return {
                 "caminho": os.path.join(pasta, arquivo),
-                "tipo": "Exata (1º Cônjuge)",
+                "tipo": "Encontrado",
                 "similaridade": 100,
                 "arquivo": arquivo
             }
 
-        # CAMADA 3: Calcula a Similaridade.
-        # (Usamos o nome do 1º cônjuge para não confundir o sistema)
+        # CAMADA 3: Similaridade (usa o 1º cônjuge para não confundir)
         similaridade = fuzz.ratio(nome_primeiro_conjuge, nome_arquivo_norm)
         if similaridade > maior_similaridade:
             maior_similaridade = similaridade
@@ -80,7 +96,7 @@ def localizar_documento(nome_original, pasta):
     if maior_similaridade >= 90:
         return {
             "caminho": os.path.join(pasta, arquivo_encontrado),
-            "tipo": "Similaridade (1º Cônjuge)",
+            "tipo": "Encontrado (similaridade)",
             "similaridade": round(maior_similaridade, 1),
             "arquivo": arquivo_encontrado
         }

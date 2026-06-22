@@ -1,28 +1,35 @@
+from localizador import construir_cache_pasta
 from aguardador import aguardar_documentos
 
 
-def coletar_documentos(nomes, pasta, log_callback, modo="CPF"):
+def coletar_documentos(nomes, pasta, log_callback, modo="CPF", progresso_callback=None):
     documentos_finais = []
+    total = len(nomes)
 
-    for nome in nomes:
-        doc_principal, doc_secundario = aguardar_documentos(nome, pasta, log_callback, modo)
+    # Cache construído uma única vez para todos os nomes
+    cache_pasta = construir_cache_pasta(pasta)
 
-        # --- LOG PARA O DOCUMENTO PRINCIPAL ---
+    for indice, nome in enumerate(nomes, start=1):
+        # Atualiza progresso se o caller forneceu um callback
+        if progresso_callback:
+            progresso_callback(nome, indice, total)
+
+        doc_principal, doc_secundario = aguardar_documentos(
+            nome, pasta, log_callback, modo, cache_pasta
+        )
+
         if doc_principal:
-            if doc_principal["tipo"].startswith("Similaridade"):
-                log_callback(
-                    f"\n⚠ Correspondência por similaridade\nPlanilha: {nome}\nArquivo: {doc_principal['arquivo']}\nSimilaridade: {doc_principal['similaridade']}%\n")
+            if "similaridade" in doc_principal["tipo"]:
+                log_callback(f"⚠ Similaridade {doc_principal['similaridade']}% — {nome} → {doc_principal['arquivo']}")
             else:
-                log_callback(f"✓ Encontrado: {nome} ({doc_principal['tipo']})")
+                log_callback(f"✓ {nome}")
             documentos_finais.append(doc_principal["caminho"])
 
-        # --- LOG PARA O SECUNDÁRIO ---
         if doc_secundario:
-            if doc_secundario["tipo"].startswith("Similaridade"):
-                log_callback(
-                    f"\n⚠ Correspondência por similaridade\nPlanilha: {nome} (Anexo)\nArquivo: {doc_secundario['arquivo']}\nSimilaridade: {doc_secundario['similaridade']}%\n")
+            if "similaridade" in doc_secundario["tipo"]:
+                log_callback(f"⚠ Similaridade {doc_secundario['similaridade']}% — Anexo de {nome} → {doc_secundario['arquivo']}")
             else:
-                log_callback(f"✓ Encontrado: Anexo de {nome} ({doc_secundario['tipo']})")
+                log_callback(f"✓ Anexo de {nome}")
             documentos_finais.append(doc_secundario["caminho"])
 
     return documentos_finais
